@@ -17,7 +17,7 @@ touch /var/log/agent-vms-install.log
 chmod 600 /var/log/agent-vms-install.log
 exec > >(tee -a /var/log/agent-vms-install.log >&2) 2>&1
 trap 'echo "Guest setup failed at line $LINENO. Rerun to resume. Log: /var/log/agent-vms-install.log" >&2' ERR
-FINGERPRINT="$(cat "$REPO_DIR/versions.env" "$SCRIPT_DIR/install-guest.sh" "$SCRIPT_DIR/common.sh" "$REPO_DIR/lib/packages.py" "$SCRIPT_DIR/health.sh" "$REPO_DIR"/scripts/record-* | sha256sum | cut -d' ' -f1)"
+FINGERPRINT="$(cat "$REPO_DIR/versions.env" "$SCRIPT_DIR/install-guest.sh" "$SCRIPT_DIR/install-native-clis.sh" "$SCRIPT_DIR/common.sh" "$REPO_DIR/lib/packages.py" "$SCRIPT_DIR/health.sh" "$REPO_DIR"/scripts/record-* | sha256sum | cut -d' ' -f1)"
 if [ -f /var/lib/agent-vms/guest-version ] && [ "$(cat /var/lib/agent-vms/guest-version)" = "$FINGERPRINT" ]; then
   systemctl start vncserver@1.service t3-serve.service
   bash "$SCRIPT_DIR/health.sh"
@@ -51,6 +51,7 @@ echo "Installing T3 $T3_VERSION and coding providers…"
 # instead of depending on another download from nodejs.org during installation.
 npm_package_config_node_gyp_nodedir=/usr npm install --global "t3@$T3_VERSION" "@openai/codex@$CODEX_VERSION" \
   "@anthropic-ai/claude-code@$CLAUDE_VERSION" "opencode-ai@$OPENCODE_VERSION"
+bash "$SCRIPT_DIR/install-native-clis.sh"
 cat > /etc/agent-vms/xstartup <<'EOF'
 #!/bin/sh
 unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
@@ -102,7 +103,8 @@ for destination in .codex/AGENTS.md .claude/CLAUDE.md .config/opencode/AGENTS.md
 # Your remote development computer
 
 You are running as agent in your own Ubuntu VM. T3, Codex, Claude Code,
-OpenCode, Git, Node.js, Python, Chrome, Xfce, xdotool, scrot and ffmpeg are installed.
+OpenCode, Cursor CLI (cursor-agent), Grok Build (grok), Git, Node.js, Python,
+Chrome, Xfce, xdotool, scrot and ffmpeg are installed.
 Use /home/agent/workspaces for repositories. Provider authentication belongs to
 this VM; no host credentials are mounted or synchronized.
 

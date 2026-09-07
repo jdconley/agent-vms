@@ -59,8 +59,8 @@ sudo ./agent-vm up my-project
 
 Provider sign-in is a separate, user-owned step in T3 or the provider CLI.
 Installing a tool does not authorize your account, and no host credentials are
-copied to the VM. T3, Codex, Claude Code, and OpenCode versions are recorded in
-[versions.env](versions.env).
+copied to the VM. Versions for T3, Codex, Claude Code, OpenCode, Cursor CLI and
+Grok Build are recorded in [versions.env](versions.env).
 
 ## Everyday commands
 
@@ -119,12 +119,19 @@ port forwarding. [T3 remote-access documentation](https://github.com/pingdotgg/t
 
 ## What agents get
 
-- T3 Code plus Codex, Claude Code, and OpenCode CLIs
+- T3 Code plus Codex, Claude Code, OpenCode, Cursor CLI and Grok Build CLIs
 - Node.js 22, Python 3, Git, build tools, jq and unzip
 - Xfce desktop, Google Chrome, xdotool and scrot
 - `record-start LABEL` / `record-stop` for screen recordings
 - `/home/agent/workspaces` for projects; persistent files across restarts
 - Global tool instructions describing the desktop and recording workflow
+
+Use `cursor-agent` for Cursor CLI and `grok` for Grok Build inside the VM. Both
+are installed from official Linux releases with pinned SHA-256 checksums.
+The generic `agent` command is omitted because both upstream installers claim it.
+Sign in with `cursor-agent login` or `grok login` using your own account.
+These are terminal tools; their availability in T3's provider selector depends
+on T3's upstream support.
 
 Recordings stop after at most 15 minutes. `record-stop` finishes earlier; videos
 remain in `/home/agent/recordings` until you remove them or delete the VM.

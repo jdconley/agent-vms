@@ -25,6 +25,16 @@ services. Ubuntu, Node and Chrome apt packages receive current repository
 versions at installation; the image is content-addressed and coding CLI versions
 are pinned, but the whole installation is not a byte-reproducible build.
 
+`setup/install-native-clis.sh` installs Cursor CLI and Grok Build from the release
+artifacts referenced by their [official Cursor installer](https://cursor.com/install)
+and [official Grok installer](https://x.ai/cli/install.sh). Versions and artifact
+SHA-256 values live in `versions.env`. Verified files go into versioned directories
+under `/usr/local/lib/agent-vms/tools`; `/usr/local/bin/cursor-agent` and
+`/usr/local/bin/grok` select the installed versions. Downloads are staged and
+checked before replacing the selected command. The shared `agent` alias is not
+created. Health checks run both CLIs with `--version` as the guest account.
+No provider authentication is attempted during installation.
+
 ## State and recovery
 
 Host metadata lives at `/var/lib/agent-vms/instances/NAME`. It records the libvirt

@@ -60,6 +60,23 @@ they do not establish support for other operating systems or tool versions.
   instance directories were absent. Temporary controller keys and tunnels were
   removed. The reusable image cache and managed network remain on the host.
 
+## Cursor and Grok CLI addition — 2026-09-07
+
+- Local suite: 33 tests passed, including real subprocess checks for native CLI
+  coexistence, cached reruns, checksum rejection and incomplete archive rejection.
+  Bash/Python checks, ShellCheck and Gitleaks passed.
+- A fresh Ubuntu 24.04 KVM guest installed the official pinned artifacts and
+  passed T3 HTTP, X11 and native CLI readiness checks.
+- As the unprivileged guest account, `cursor-agent --version` reported
+  `2026.09.02-c22c1a3`; `grok --version` reported `grok 1.0.13 (5e9a58528b76)`.
+  Both `--help` and `login --help` completed successfully. No login or provider
+  request was performed.
+- Tool directories were root-owned and readable/executable by the guest account.
+  No `/usr/local/bin/agent` alias was created.
+- An unchanged `up` skipped package installation, passed readiness again and
+  preserved a test project file. The test VM was then deleted; the managed
+  instance listing was empty.
+
 ## Runtime findings fixed
 
 - T3 pairing tokens use a URL fragment; parsing supports the observed format.

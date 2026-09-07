@@ -24,6 +24,10 @@ the commit, tool versions and results, excluding credentials and pairing tokens.
    endpoint health and the generated controller tunnel.
 2. Open the pairing link in a browser on the controller, complete pairing and
    check that T3 renders. Test provider sign-in only with an authorized account.
+   Check `cursor-agent --version` and `grok --version` as the guest's `agent` user.
+   When changing either native CLI pin, download the versioned artifact from its
+   official installer source, update its SHA-256 in `versions.env`, and repeat
+   the runtime check. Do not substitute third-party packages with similar names.
 3. In the VM, use Chrome on display :1 and record a short interaction using
    `record-start smoke` and `record-stop`. Check the MP4 with ffprobe and playback.
 4. Rerun `up` with the same name/resources. Verify it preserves guest files and
