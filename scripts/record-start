@@ -1,0 +1,39 @@
+#!/bin/bash
+# Record up to 15 minutes of display :1. Run record-stop to finish earlier.
+set -euo pipefail
+LABEL="${1:-$(date +%Y%m%d-%H%M%S)}"
+if [[ ! "$LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]; then
+  echo 'Recording label must be 1–80 letters, digits, dots, underscores or hyphens.' >&2
+  exit 1
+fi
+RECORDINGS_DIR="${AGENT_VMS_RECORDINGS_DIR:-$HOME/recordings}"
+mkdir -p "$RECORDINGS_DIR"
+chmod 700 "$RECORDINGS_DIR"
+exec 9>"$RECORDINGS_DIR/.lock"
+flock -n 9 || { echo 'Another recording operation is in progress.' >&2; exit 1; }
+PIDFILE="$RECORDINGS_DIR/.pid"
+if [ -f "$PIDFILE" ] && ps -p "$(cat "$PIDFILE")" -o comm= 2>/dev/null | grep -q 'ffmpeg$'; then
+  echo 'A recording is already running. Run record-stop first.' >&2
+  exit 1
+fi
+OUTFILE="$RECORDINGS_DIR/${LABEL}-$(date +%s).mp4"
+nohup ffmpeg -n -f x11grab -video_size 1280x800 -framerate 15 -i :1 \
+  -t 900 -pix_fmt yuv420p -c:v libx264 -preset ultrafast \
+  "$OUTFILE" > "$RECORDINGS_DIR/.log" 2>&1 9>&- &
+PID=$!
+printf '%s\n' "$PID" > "$PIDFILE"
+for _ in $(seq 1 20); do
+  if ! kill -0 "$PID" 2>/dev/null; then
+    rm -f "$PIDFILE"
+    echo "Recording failed to start. Inspect $RECORDINGS_DIR/.log" >&2
+    exit 1
+  fi
+  if [ -s "$OUTFILE" ]; then
+    echo "Recording started -> $OUTFILE (up to 15 minutes)"
+    exit 0
+  fi
+  sleep 0.25
+done
+kill -INT "$PID" 2>/dev/null || true
+echo "Recording did not become ready. Inspect $RECORDINGS_DIR/.log" >&2
+exit 1

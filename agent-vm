@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""One command to provision and connect to your own T3 Code VM."""
+from lib.agent_vm import main
+
+if __name__ == "__main__":
+    main()
