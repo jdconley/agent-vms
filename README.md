@@ -212,7 +212,7 @@ service logs are available with `journalctl -u t3-serve -u vncserver@1` in the V
 Rerun the original command after fixing the reported problem. Existing VMs are
 retained on failure so their logs and files remain available.
 
-See [architecture](docs/ARCHITECTURE.md), [migration from the original prototype](docs/MIGRATION.md),
-and [contributing](CONTRIBUTING.md). This is an independent, self-hosted project,
-not an official T3 service. Repository code is [MIT licensed](LICENSE); installed
-third-party tools retain their own licenses.
+See [architecture](docs/ARCHITECTURE.md) and [contributing](CONTRIBUTING.md).
+This is an independent, self-hosted project, not an official T3 service.
+Repository code is [MIT licensed](LICENSE); installed third-party tools retain
+their own licenses.

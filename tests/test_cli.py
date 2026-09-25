@@ -102,7 +102,7 @@ class DataTests(unittest.TestCase):
             names = archive.getnames()
         self.assertIn("agent-vm", names)
         self.assertIn("lib/agent_vm.py", names)
-        self.assertFalse(any(".git" in x or "config.local" in x or ".ssh" in x for x in names))
+        self.assertFalse(any(".git" in x or ".ssh" in x or Path(x).name.startswith(".env") for x in names))
 
     def test_state_rejects_disk_path_outside_owned_directory(self):
         module = self.api()

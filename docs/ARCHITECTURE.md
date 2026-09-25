@@ -47,7 +47,7 @@ they can be changed. Failed provisioning preserves the guest for diagnosis.
 Base images live under `/var/lib/libvirt/images/agent-vms`. A guest's backing
 image is never replaced. Deleting a guest removes its owned directory and domain;
 base-image garbage collection is deliberately manual until reference checking
-is implemented. Existing prototype instances remain unmanaged.
+is implemented. VMs created by other tools remain unmanaged.
 
 ## Remote access
 
@@ -57,21 +57,21 @@ loopback. For an existing VM, only the controller tunnel is needed. Pairing URLs
 are rewritten to the selected local port; no public listener is required.
 Controller tunnel sockets live under `~/.local/state/agent-vms/tunnels`.
 
-Tools that run agents over SSH (Claude Code, Codex, editors) need a direct
-login as `agent`. After `up`/`install`, the controller creates a dedicated key
-in `~/.ssh/agent-vms`, and the host installs its public key in the guest over
-the management connection, which also returns the guest's host key. SSH
-accounts are often limited to forwarding to loopback (`PermitOpen 127.0.0.1:*`),
-so the host publishes each guest's SSH on a stable host-loopback port
-(22200–22999, recorded in state) with a socket-activated
-`systemd-socket-proxyd` unit running as a dynamic user. The controller writes a
-`Host avm-NAME` entry with the key pinned, `ProxyJump` through the KVM host and
-that port; an existing VM jumps through itself to its own port 22.
-`~/.ssh/config` gets one `Include` line at the top so these entries take
-precedence over later `Host *` defaults. The host turns each guest's first DHCP
-lease into a libvirt reservation, so the address survives reboots; deletion
-releases it and removes the relay units. Only this controller's previous key (matched by its comment) is
-replaced; the management key and other keys are kept.
+Tools that run agents over SSH (Claude Code, Codex, editors) need a direct login
+as `agent`. After `up`/`install`, the controller creates a dedicated key in
+`~/.ssh/agent-vms`, and the host installs its public key in the guest over the
+management connection, which also returns the guest's host key. SSH accounts are
+often limited to forwarding to loopback (`PermitOpen 127.0.0.1:*`), so the host
+publishes each guest's SSH on a stable host-loopback port (22200–22999, recorded
+in state) with a socket-activated `systemd-socket-proxyd` unit running as a
+dynamic user. The controller writes a `Host avm-NAME` entry with the key pinned,
+`ProxyJump` through the KVM host and that port; an existing VM jumps through
+itself to its own port 22. `~/.ssh/config` gets one `Include` line at the top so
+these entries take precedence over later `Host *` defaults. The host turns each
+guest's first DHCP lease into a libvirt reservation, so the address survives
+reboots; deletion releases it and removes the relay units. Only this
+controller's previous key (matched by its comment) is replaced; the management
+key and other keys are kept.
 
 `mobile` optionally installs Tailscale in the VM, requests user authorization,
 and runs T3's `pair --tailscale`. The resulting HTTPS endpoint is private to the
@@ -84,3 +84,13 @@ nftables table blocks guest-originated host access except DHCP/DNS, private IPv4
 destinations, and IPv6 forwarding. Existing host networks/firewall tables are
 not rewritten. The agent has sudo inside its VM and public internet access.
 This is a single-owner development tool, not a hostile multi-tenant service.
+
+## Design choices
+
+A prebuilt VM image (for example with Packer) would start guests faster, but it
+adds another tool and a long build before first use. Guests instead boot the
+checksum-verified Ubuntu cloud image and run the same installer as `install`,
+so one command works on a fresh host and reruns reuse the cached base image.
+Cloud-provider APIs would remove the KVM requirement but bring accounts, billing
+and provider-specific provisioning. KVM plus installation into an existing VM
+covers self-hosted use and leaves a clear boundary for adding providers later.

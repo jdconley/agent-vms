@@ -16,10 +16,11 @@ Use `./agent-vm doctor --host USER@HOST --json` for preflight. On a Linux host
 directly, omit `--host` and use sudo. On macOS, supply a remote host.
 
 The CLI uploads only installer source, installs dependencies, checks readiness,
-and creates a secure tunnel. Run from the cloned repository; no config.local,
-Packer build or shared credential store is needed. Keep the command running
-during installation and monitor its actual process handle. Rerun the same
-command to resume a failed setup. Do not delete/recreate a VM to mask an error.
+and creates a secure tunnel. Run from the cloned repository; no local
+configuration file, image build or shared credential store is needed. Keep the
+command running during installation and monitor its actual process handle. Rerun
+the same command to resume a failed setup. Do not delete/recreate a VM to mask
+an error.
 
 Use `./agent-vm run [NAME] --host HOST --command 'COMMAND'` to execute setup,
 repository clones, diagnostics or provider device-login commands as `agent`
@@ -52,4 +53,4 @@ Use Python's standard library and Bash. The controller must not need pip/npm
 installation. Run `python3 -m unittest discover -s tests -v` and `./tests/lint.sh`.
 Use the real Linux smoke-test procedure in CONTRIBUTING.md for provisioning
 changes. Keep managed state, ownership checks, and immutable backing images.
-Do not modify unrelated host networks or migrate existing legacy VMs implicitly.
+Do not modify unrelated host networks or adopt VMs this tool did not create.

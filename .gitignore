@@ -1,27 +1,22 @@
-# Packer build artifacts and cache
-image/output-*/
-image/packer_cache/
+# VM disk images
 *.qcow2
 
-# Local, host-specific config (never commit real paths/hosts/secrets)
-config.local
-
-# SSH keys generated for builds
+# SSH keys and host records
 *.pem
 *.key
 id_ed25519*
 id_rsa*
 known_hosts*
-.packer_build_key*
+
+# Local agent working notes
+docs/superpowers/
 
 # Misc
 .DS_Store
 
-# Python checks and generated cloud-init/media artifacts
+# Python checks and media artifacts
 __pycache__/
 *.py[cod]
-image/cloud-init/user-data
-*-seed.img
 *.mp4
 *.log
 .env

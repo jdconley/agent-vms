@@ -31,5 +31,3 @@ production multi-tenant service or an assurance against hypervisor exploits.
 Report vulnerabilities through this repository's GitHub private vulnerability
 reporting feature when available. Otherwise contact the maintainer privately;
 do not put credentials or a working exploit against a real host in a public issue.
-
-See docs/MIGRATION.md if you used the original shared credential store.
