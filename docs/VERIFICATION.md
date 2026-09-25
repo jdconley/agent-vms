@@ -110,6 +110,34 @@ they do not establish support for other operating systems or tool versions.
   entry, asked for sign-in in the VM, then worked.
 - Not yet verified: GitHub sign-in with a real account.
 
+## Self-updating coding tools — 2026-09-24
+
+- Local suite: 88 tests passed on macOS, including the updater and the agent
+  installer run for real against fake npm, curl, CLIs and systemd tools. Lint passed.
+- Rerunning `up` on a guest installed with pinned root-owned tools removed 205
+  root npm packages and the pinned binaries, then installed all six tools as
+  `agent` at their latest releases: T3 0.0.42, Codex 0.157.0, Claude Code
+  2.1.282, OpenCode 1.18.32, Cursor CLI 2026.09.23-86fc751 and Grok 1.0.41.
+  Plain non-login SSH commands resolved each one to the agent's copy. A workspace
+  file, the Codex login and the Claude desktop files were kept.
+- During that run the controller's SSH connection to the KVM host timed out.
+  The guest installation continued and completed; rerunning `up` then took the
+  unchanged-installer path in 18 seconds and restored the tunnel and SSH entry.
+- `agent-vms-update.service` ran every tool's own updater as `agent` without a
+  terminal and succeeded in about 6 seconds. After giving the service the agent
+  tool PATH, Claude Code's PATH warning no longer appeared.
+- `agent-vm update` printed every tool's version and left a current T3 running.
+  With T3 stopped and downgraded, `update` reported the newer T3 and restarted
+  it; `ExecStartPre` installed 0.0.42 before start and health passed.
+- An in-place npm downgrade dropped T3's platform binary. A T3 that cannot report
+  its version is reinstalled by the next pre-start check.
+- Rerunning a changed installer left installed tools to their updaters.
+- A fresh guest installed every tool through npm and the vendor installers,
+  passed health with the timer enabled, and was deleted with its reservation,
+  relay units, directory and SSH entry removed.
+- Not yet verified: an unattended daily timer run, and desktop apps reconnecting
+  after the migration.
+
 ## Runtime findings fixed
 
 - T3 pairing tokens use a URL fragment; parsing supports the observed format.
