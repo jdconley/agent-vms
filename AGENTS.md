@@ -36,6 +36,8 @@ stdout structured. Keep tokens out of command arguments and logs.
 - Verify `ssh avm-NAME true` (existing VM: `avm-HOSTNAME`) for Claude Code,
   Codex and editor access. If `up` reports SSH was not configured, fix the cause
   and run `ssh-config [NAME] --host USER@HOST`.
+- Coding tools update themselves daily. If a desktop app needs a newer tool now,
+  run `update [NAME] --host USER@HOST`; it restarts T3 only for a newer version.
 - Provider and GitHub accounts require the user's authorization in T3 or the
   guest CLI (`gh auth login`, then `gh auth setup-git`).
   Never copy their personal SSH private key, host login tokens, or browser profile.

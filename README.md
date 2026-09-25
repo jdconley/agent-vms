@@ -61,8 +61,8 @@ sudo ./agent-vm up my-project
 
 Provider sign-in is a separate, user-owned step in T3 or the provider CLI.
 Installing a tool does not authorize your account, and no host credentials are
-copied to the VM. Versions for T3, Codex, Claude Code, OpenCode, Cursor CLI and
-Grok Build are recorded in [versions.env](versions.env).
+copied to the VM. The coding tools install at their latest versions and keep
+themselves current; see [Updates](#updates).
 
 ## Everyday commands
 
@@ -73,6 +73,7 @@ Grok Build are recorded in [versions.env](versions.env).
 ./agent-vm connect my-project --host you@linux-server
 ./agent-vm run my-project --host you@linux-server --command 'git --version'
 ./agent-vm ssh-config my-project --host you@linux-server
+./agent-vm update my-project --host you@linux-server
 ./agent-vm stop my-project --host you@linux-server
 ./agent-vm up my-project --host you@linux-server
 ./agent-vm delete my-project --host you@linux-server --yes
@@ -111,8 +112,8 @@ ssh avm-my-project
 
 - **Claude Code desktop:** add an SSH connection with host `avm-my-project`.
   On first connection it installs and manages its own Claude Code copy in the
-  VM (under `~/.claude/remote`); the pinned `claude` command stays for T3 and
-  the terminal.
+  VM (under `~/.claude/remote`); the VM's own `claude` command stays for T3
+  and the terminal.
 - **Codex (Codex app or ChatGPT desktop app):** enable `avm-my-project` under
   Settings → Connections. The app asks you to sign in to Codex in the VM the
   first time; `ssh -t avm-my-project codex login --device-auth` also works.
@@ -191,9 +192,8 @@ port forwarding. [T3 remote-access documentation](https://github.com/pingdotgg/t
 - Global tool instructions describing the desktop and recording workflow
 
 Use `cursor-agent` for Cursor CLI and `grok` for Grok Build inside the VM. Both
-are installed from official Linux releases with pinned SHA-256 checksums.
-The generic `agent` command is omitted because both upstream installers claim it.
-Sign in with `cursor-agent login` or `grok login` using your own account.
+come from their official installers; Cursor's also adds an `agent` command in
+login shells. Sign in with `cursor-agent login` or `grok login` using your own account.
 These are terminal tools; their availability in T3's provider selector depends
 on T3's upstream support.
 
@@ -204,6 +204,30 @@ VNC listens on guest loopback (`5901`), and T3 listens on guest loopback (`3773`
 The managed network blocks guest-to-guest traffic and guest-initiated access to
 host/private-network services except its DHCP/DNS. The VM can reach the public
 internet. See [SECURITY.md](SECURITY.md) for the trust model and limits.
+
+## Updates
+
+The coding tools are installed as the VM's `agent` user, so each tool's own
+updater works as it would on a laptop. A daily timer also runs every tool's
+update command (`claude update`, `codex update`, `opencode upgrade`,
+`cursor-agent update`, `grok update`); Codex needs this because it does not
+update itself while a desktop app drives it. T3 updates when its service starts
+(VM boot, `up` or `update`), never under running agent sessions; if npm is
+unreachable, the installed version starts.
+
+To update now, for example when a desktop app needs a newer `codex`:
+
+```bash
+./agent-vm update my-project --host you@linux-server
+```
+
+It restarts T3 only if a newer T3 exists, which ends running agent sessions,
+then checks health and prints each tool's version. Updater logs are in the VM:
+`journalctl -u agent-vms-update`.
+
+Because tools track their latest releases, installs are not reproducible and
+VMs can run different versions. Only the Node.js major version is fixed, in
+[versions.env](versions.env).
 
 ## Troubleshooting and contributing
 

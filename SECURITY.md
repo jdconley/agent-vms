@@ -25,8 +25,15 @@ production multi-tenant service or an assurance against hypervisor exploits.
   trust-on-first-use on the isolated managed network.
 - Pairing URLs, auth codes, logs, recordings and VM disks can contain sensitive
   data. Do not publish these artifacts. Deleting a VM is not secure disk erasure.
-- Upstream packages are obtained over HTTPS/signed apt repositories. Coding tool
-  versions are pinned; this does not replace dependency review or timely updates.
+- System packages come from signed apt repositories. Coding tools install at
+  their latest releases and update themselves as `agent`: npm verifies registry
+  integrity and Claude Code's installer verifies Anthropic's SHA-256 manifest,
+  but the Cursor and Grok installers download over HTTPS without checksums.
+  Versions are not pinned, so VMs can differ and a compromised release would
+  reach them on the next update.
+- The tools are writable by `agent` and linked from `/usr/local/bin`, so a
+  root shell can run agent-controlled programs. `agent` already has
+  passwordless sudo, so this adds no new boundary.
 
 Report vulnerabilities through this repository's GitHub private vulnerability
 reporting feature when available. Otherwise contact the maintainer privately;

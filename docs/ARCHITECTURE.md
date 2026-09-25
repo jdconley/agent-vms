@@ -15,25 +15,38 @@ The private management key stays on the host and is unique to that instance.
 
 After cloud-init completes, the host streams `setup/install-guest.sh` and its
 sources over SSH. `install` runs that same installer in an existing VM. It
-installs packages, desktop tools, pinned coding CLIs and systemd units. There is
-no image build account, shared credential store, or dependency on a human login
+installs packages, desktop tools, coding CLIs and systemd units. There is no
+image build account, shared credential store, or dependency on a human login
 name. Services are installed after cloud-init, avoiding boot ordering cycles.
 
 T3 and VNC bind to loopback. HTTP and X11 readiness are checked before success.
 An installer fingerprint permits unchanged reruns to check/start existing
 services. Ubuntu, Node and Chrome apt packages receive current repository
-versions at installation; the image is content-addressed and coding CLI versions
-are pinned, but the whole installation is not a byte-reproducible build.
+versions at installation and the base image is content-addressed, but the
+installation is not reproducible: coding tools track their latest releases.
 
-`setup/install-native-clis.sh` installs Cursor CLI and Grok Build from the release
-artifacts referenced by their [official Cursor installer](https://cursor.com/install)
-and [official Grok installer](https://x.ai/cli/install.sh). Versions and artifact
-SHA-256 values live in `versions.env`. Verified files go into versioned directories
-under `/usr/local/lib/agent-vms/tools`; `/usr/local/bin/cursor-agent` and
-`/usr/local/bin/grok` select the installed versions. Downloads are staged and
-checked before replacing the selected command. The shared `agent` alias is not
-created. Health checks run both CLIs with `--version` as the guest account.
-No provider authentication is attempted during installation.
+## Coding tools
+
+`setup/install-agent-tools.sh` installs the coding CLIs as `agent` so their own
+updaters can replace them. T3, Codex and OpenCode use npm with the prefix
+`/home/agent/.local`. Claude Code uses [Anthropic's native installer](https://claude.ai/install.sh),
+which checks each binary against a published SHA-256 manifest. Cursor CLI and
+Grok Build use their official [Cursor](https://cursor.com/install) and
+[Grok](https://x.ai/cli/install.sh) installers, which download over HTTPS without
+checksums. Installer scripts are downloaded completely before they run. A tool is
+installed only when missing; afterwards its own updater owns it. Root-owned links
+in `/usr/local/bin` point at the agent's copies, so login shells, plain SSH
+commands, services and the management channel all run the current versions.
+
+`agent-vms-update.timer` runs `setup/update-tools.sh clis` daily as `agent`: every
+tool's own update command, each with a timeout, continuing past failures. T3 runs
+agent sessions as child processes, so it is never replaced while it runs:
+`t3-serve.service` updates it in `ExecStartPre`, and a failed or offline check
+starts the installed version. `agent-vm update` runs the updater immediately and
+restarts T3 only when a newer version exists. Health checks require each coding
+CLI to resolve to the agent's copy and run as `agent`. Reinstalling over an older
+release removes its root-owned npm packages and pinned binaries. No provider
+authentication is attempted during installation.
 
 ## State and recovery
 
