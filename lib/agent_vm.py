@@ -107,7 +107,8 @@ def remote(host, arguments):
     result = run([*ssh_base(host), script], capture=True, data=source_archive(), check=False)
     # The remote CLI and ssh already explained the failure on stderr.
     if result.returncode == 255:
-        raise Error(f"Could not connect to {host} over SSH (exit 255); see the SSH message above.")
+        raise Error(f"SSH connection to {host} failed or dropped (exit 255); see the SSH message above. "
+                    "Work may continue there; rerunning the same command resumes safely.")
     if result.returncode:
         raise Error(f"{host} reported an error (exit {result.returncode}); see the message above.")
     try:

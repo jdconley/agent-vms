@@ -190,7 +190,7 @@ class DataTests(unittest.TestCase):
     def test_remote_failure_names_the_host_without_dumping_the_transport(self):
         module = self.api()
         with tempfile.TemporaryDirectory() as directory:
-            for code, expected in ((1, "fixture reported an error"), (255, "Could not connect to fixture")):
+            for code, expected in ((1, "fixture reported an error"), (255, "SSH connection to fixture failed or dropped")):
                 binary = Path(directory) / "ssh"
                 binary.write_text(f'#!/bin/bash\nexit {code}\n')
                 binary.chmod(0o755)

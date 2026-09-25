@@ -57,6 +57,9 @@ for package in t3 @openai/codex @anthropic-ai/claude-code opencode-ai; do
   [ ! -d "/usr/lib/node_modules/$package" ] || legacy+=("$package")
 done
 [ "${#legacy[@]}" -eq 0 ] || npm uninstall --global "${legacy[@]}"
+for scope in @anthropic-ai @openai; do
+  [ ! -d "/usr/lib/node_modules/$scope" ] || rmdir --ignore-fail-on-non-empty "/usr/lib/node_modules/$scope"
+done
 rm -rf /usr/local/lib/agent-vms/tools
 echo 'Installing coding tools as agent so they can keep themselves current…'
 (cd /home/agent && runuser -u agent -- env HOME=/home/agent bash /usr/local/lib/agent-vms/install-agent-tools.sh)
@@ -97,6 +100,7 @@ User=agent
 WorkingDirectory=/home/agent
 Environment=DISPLAY=:1
 Environment=XAUTHORITY=/home/agent/.Xauthority
+Environment=PATH=/home/agent/.local/bin:/home/agent/.grok/bin:/usr/local/bin:/usr/bin:/bin
 # Update T3 only while it is stopped; "-" starts the installed version if this fails.
 ExecStartPre=-/usr/local/lib/agent-vms/update-tools.sh t3
 ExecStart=/usr/local/bin/t3 serve --host 127.0.0.1 --port 3773 --no-browser
@@ -115,6 +119,7 @@ After=network-online.target
 Type=oneshot
 User=agent
 WorkingDirectory=/home/agent
+Environment=PATH=/home/agent/.local/bin:/home/agent/.grok/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/local/lib/agent-vms/update-tools.sh clis
 TimeoutStartSec=3600
 EOF

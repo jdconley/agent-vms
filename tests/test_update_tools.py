@@ -106,6 +106,13 @@ class UpdateToolsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("installed version", result.stderr)
 
+    def test_t3_reinstalls_when_the_installed_t3_is_broken(self):
+        # npm can drop T3's platform binary; that T3 then cannot report a version.
+        (self.script.parent.parent / "bin/t3").write_text("#!/bin/bash\necho 'no build for this platform' >&2\nexit 1\n")
+        result = self.run_mode("t3", REGISTRY_T3="0.0.42")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any("t3@0.0.42" in call for call in self.calls() if call.startswith("npm install")))
+
     def test_t3_outdated_reports_only_a_reachable_different_version(self):
         self.assertEqual(self.run_mode("t3-outdated", REGISTRY_T3="0.0.42").returncode, 0)
         self.assertNotEqual(self.run_mode("t3-outdated", REGISTRY_T3="0.0.38").returncode, 0)

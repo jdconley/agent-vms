@@ -36,6 +36,8 @@ class InstallTests(unittest.TestCase):
         self.assertIn("for package in t3 @openai/codex @anthropic-ai/claude-code opencode-ai; do", script)
         self.assertIn('npm uninstall --global "${legacy[@]}"', script)
         self.assertIn("rm -rf /usr/local/lib/agent-vms/tools", script)
+        # npm uninstall leaves empty scope directories behind.
+        self.assertIn('rmdir --ignore-fail-on-non-empty "/usr/lib/node_modules/$scope"', script)
         self.assertFalse((ROOT / "setup/install-native-clis.sh").exists())
 
     def test_t3_updates_only_when_its_service_starts(self):
@@ -51,6 +53,12 @@ class InstallTests(unittest.TestCase):
         for setting in ("OnCalendar=daily", "RandomizedDelaySec=2h", "Persistent=true", "WantedBy=timers.target"):
             self.assertIn(setting, script)
         self.assertIn("systemctl enable --now agent-vms-update.timer", script)
+
+    def test_services_use_the_agents_tool_path(self):
+        # Tools check PATH to find their own installs (Claude warns without it).
+        script = (ROOT / "setup/install-guest.sh").read_text()
+        path = "Environment=PATH=/home/agent/.local/bin:/home/agent/.grok/bin:/usr/local/bin:/usr/bin:/bin"
+        self.assertEqual(script.count(path), 2, "Both T3 and the updater run tools")
 
     def test_installer_fingerprint_covers_the_new_scripts(self):
         fingerprint = next(line for line in (ROOT / "setup/install-guest.sh").read_text().splitlines()
