@@ -43,6 +43,16 @@ class CommandTests(unittest.TestCase):
         result = self.cli("install", "--host", "-oProxyCommand=touch /tmp/unsafe")
         self.assertNotEqual(result.returncode, 0)
 
+    def test_interrupt_explains_how_to_resume(self):
+        caller = ("import sys, lib.agent_vm as cli\n"
+                  "def interrupted(args): raise KeyboardInterrupt\n"
+                  "cli.validate = interrupted\n"
+                  "sys.argv = ['agent-vm', 'doctor']\n"
+                  "cli.main()\n")
+        result = subprocess.run(["python3", "-c", caller], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Interrupted. Rerun the same command to resume.", result.stderr)
+
     def test_tunnel_child_does_not_keep_caller_output_open(self):
         with tempfile.TemporaryDirectory() as directory:
             pidfile = Path(directory) / "child.pid"
@@ -130,6 +140,14 @@ class DataTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--command", result.stdout)
 
+    def test_forwarded_guest_command_survives_remote_parsing(self):
+        module = self.api()
+        for command in ("--version", "-v", "git status --short"):
+            local = module.parser().parse_args(["run", "demo", "--host", "kvm-host", f"--command={command}"])
+            remote = module.parser().parse_args([*module.forwarded(local), "--json"])
+            self.assertEqual(remote.guest_command, command)
+            self.assertEqual(remote.name, "demo")
+
     def test_tunnel_does_not_report_ready_when_forwarding_is_denied(self):
         module = self.api()
         with tempfile.TemporaryDirectory() as directory:
@@ -168,6 +186,19 @@ class DataTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+    def test_remote_failure_names_the_host_without_dumping_the_transport(self):
+        module = self.api()
+        with tempfile.TemporaryDirectory() as directory:
+            for code, expected in ((1, "fixture reported an error"), (255, "Could not connect to fixture")):
+                binary = Path(directory) / "ssh"
+                binary.write_text(f'#!/bin/bash\nexit {code}\n')
+                binary.chmod(0o755)
+                with patch.dict(os.environ, {"PATH": directory + os.pathsep + os.environ["PATH"]}):
+                    with self.assertRaises(module.Error) as caught:
+                        module.remote("fixture", ["doctor"])
+                self.assertIn(expected, str(caught.exception))
+                self.assertNotIn("mktemp", str(caught.exception), "The remote shell script is noise to users")
 
     def test_remote_failure_is_propagated(self):
         module = self.api()

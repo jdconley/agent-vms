@@ -77,6 +77,39 @@ they do not establish support for other operating systems or tool versions.
   preserved a test project file. The test VM was then deleted; the managed
   instance listing was empty.
 
+## SSH access, GitHub CLI and review fixes — 2026-09-24
+
+- Local suite: 63 tests passed on macOS, including generated SSH entries resolved
+  by real `ssh -G` and the guest key script run against real files. Lint passed.
+- The first live `up` found that the SSH account could forward only to host
+  loopback (`AllowTcpForwarding local`, `PermitOpen 127.0.0.1:*`). ProxyJump to the
+  guest address was refused while the T3 tunnel worked; `up` still printed the
+  pairing link and a repair command. A temporary loopback relay confirmed the
+  replacement design before the code changed.
+- Rerunning `up` kept the guest UUID and disk, applied the changed installer
+  (adding `gh`) and configured SSH. `ssh avm-NAME` worked through the controller's
+  real `~/.ssh/config` with the pinned host key and strict host-key checking.
+- As `agent`: `gh` 2.101.0 and all pinned coding CLIs ran. `codex` resolved on the
+  login-shell PATH; `codex app-server` and `codex login --device-auth` exist.
+- `gh auth login --web --git-protocol https` without a terminal printed a device
+  code and URL, then waited. It was stopped unapproved; `gh` stayed logged out.
+- VNC forwarded through the SSH entry answered with `RFB 003.008`. T3's environment
+  endpoint and pairing page answered through the controller tunnel.
+- After stop and `up --no-connect`, the guest kept its reserved address and
+  `ssh avm-NAME` worked through the existing relay without rerunning `ssh-config`.
+  A paused guest reported its state and a one-line controller summary.
+- From inside guests, the host's tailnet address, another tailnet device, the
+  bridge and LAN host addresses, a peer guest's SSH/T3 and the host relay ports
+  were blocked. Public HTTPS returned HTTP 200.
+- A second guest received the next relay port. Deleting it removed its domain,
+  reservation, relay units and listener, instance directory, and the controller's
+  SSH entry and known-hosts line. The first guest stayed healthy.
+- The maintainer connected the Claude Code desktop app over the entry; it
+  installed its own Claude Code copy under `~/.claude/remote` while the pinned
+  `claude` stayed on PATH. Codex in the ChatGPT desktop app connected over the
+  entry, asked for sign-in in the VM, then worked.
+- Not yet verified: GitHub sign-in with a real account.
+
 ## Runtime findings fixed
 
 - T3 pairing tokens use a URL fragment; parsing supports the observed format.

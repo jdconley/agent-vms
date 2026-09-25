@@ -57,6 +57,22 @@ loopback. For an existing VM, only the controller tunnel is needed. Pairing URLs
 are rewritten to the selected local port; no public listener is required.
 Controller tunnel sockets live under `~/.local/state/agent-vms/tunnels`.
 
+Tools that run agents over SSH (Claude Code, Codex, editors) need a direct
+login as `agent`. After `up`/`install`, the controller creates a dedicated key
+in `~/.ssh/agent-vms`, and the host installs its public key in the guest over
+the management connection, which also returns the guest's host key. SSH
+accounts are often limited to forwarding to loopback (`PermitOpen 127.0.0.1:*`),
+so the host publishes each guest's SSH on a stable host-loopback port
+(22200–22999, recorded in state) with a socket-activated
+`systemd-socket-proxyd` unit running as a dynamic user. The controller writes a
+`Host avm-NAME` entry with the key pinned, `ProxyJump` through the KVM host and
+that port; an existing VM jumps through itself to its own port 22.
+`~/.ssh/config` gets one `Include` line at the top so these entries take
+precedence over later `Host *` defaults. The host turns each guest's first DHCP
+lease into a libvirt reservation, so the address survives reboots; deletion
+releases it and removes the relay units. Only this controller's previous key (matched by its comment) is
+replaced; the management key and other keys are kept.
+
 `mobile` optionally installs Tailscale in the VM, requests user authorization,
 and runs T3's `pair --tailscale`. The resulting HTTPS endpoint is private to the
 tailnet. T3 Connect remains an upstream alternative that users can configure.

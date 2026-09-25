@@ -1,7 +1,7 @@
 #!/bin/bash
 # Bounded readiness check: systemd state alone does not prove HTTP/X11 readiness.
 set -euo pipefail
-for tool in t3 codex claude opencode cursor-agent grok google-chrome-stable ffmpeg xdotool scrot; do
+for tool in t3 codex claude opencode cursor-agent grok gh google-chrome-stable ffmpeg xdotool scrot; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool" >&2; exit 1; }
 done
 runuser -u agent -- test -w /home/agent/.config || {

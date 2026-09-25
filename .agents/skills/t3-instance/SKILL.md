@@ -18,6 +18,8 @@ For a dedicated VM that already exists:
 ./agent-vm install --host USER@VM
 ```
 
+`up` and `install` also create the SSH host `avm-PROJECT` for Claude Code, Codex
+and editors; `ssh-config [PROJECT] --host HOST` repairs or adds it on another computer.
 Use `connect [PROJECT] --host HOST` to reconnect, `status [PROJECT] --host HOST`
 to verify, and `mobile [PROJECT] --host HOST` for opt-in Tailscale HTTPS. Omit
 PROJECT for existing-VM installs. `--json` gives structured output and disables

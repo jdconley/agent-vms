@@ -1,5 +1,7 @@
+import hashlib
 import importlib
 from contextlib import ExitStack
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -54,6 +56,24 @@ class HostTests(unittest.TestCase):
             with self.assertRaisesRegex(host.Error, "checksum"):
                 host.verify_image(target, "0" * 64)
 
+    def test_missing_cached_image_refreshes_its_checksum_manifest(self):
+        host = self.host()
+        image = b"newer ubuntu image"
+        newer = hashlib.sha256(image).hexdigest()
+        with tempfile.TemporaryDirectory() as d, ExitStack() as stack:
+            bases = Path(d)
+            # The manifest still names an older image whose file was removed.
+            (bases / "ubuntu-24.04.json").write_text(json.dumps({"sha256": "0" * 64}))
+            sums = io.BytesIO(f"{newer} *{host.IMAGE_NAME}\n".encode())
+            stack.enter_context(patch.object(host, "BASES", bases))
+            stack.enter_context(patch.object(host.urllib.request, "urlopen", return_value=sums))
+            def download(argv, **kwargs):
+                Path(argv[argv.index("--output") + 1]).write_bytes(image)
+            stack.enter_context(patch.object(host, "run", side_effect=download))
+            path = host.base_image()
+            self.assertEqual(path, bases / f"ubuntu-24.04-{newer}.qcow2")
+            self.assertEqual(json.loads((bases / "ubuntu-24.04.json").read_text())["sha256"], newer)
+
     def test_reconnect_reuses_live_host_tunnel(self):
         host = self.host()
         with tempfile.TemporaryDirectory() as d:
@@ -104,6 +124,7 @@ class HostTests(unittest.TestCase):
             stack.enter_context(patch.object(host, "virsh", side_effect=libvirt))
             stack.enter_context(patch.object(host, "domain_exists", side_effect=lambda name: name in domains))
             stack.enter_context(patch.object(host, "address", return_value="192.0.2.2"))
+            stack.enter_context(patch.object(host, "reserve_address"))  # covered in test_ssh_access
             stack.enter_context(patch.object(host.shutil, "chown"))
             install = stack.enter_context(patch.object(host, "install_guest", side_effect=host.Error("install failed")))
             args = SimpleNamespace(name="demo", cpus=4, memory=6144, disk=30)

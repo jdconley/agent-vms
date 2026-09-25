@@ -10,6 +10,13 @@ production multi-tenant service or an assurance against hypervisor exploits.
 - A management key is generated per managed guest and remains on the host.
   Host/provider credentials are not copied into guests. Guest logins are not
   shared across VMs.
+- `up`, `install` and `ssh-config` create a passphrase-free key on your computer
+  at `~/.ssh/agent-vms/id_ed25519` so GUI tools can connect without prompts.
+  It logs in to your VMs as `agent`, which has sudo inside the VM; protect it
+  like your other SSH keys. To revoke a computer, remove its `agent-vms@HOST`
+  line from `/home/agent/.ssh/authorized_keys` in each VM. Each managed VM's
+  SSH is relayed on the KVM host's loopback only; local users of that host
+  could already reach the guest's SSH, and it still requires a key.
 - Guests on the managed bridge cannot initiate access to host services other
   than DHCP/DNS or private network destinations. Other host users with sufficient
   local privileges remain trusted. For `install` on an existing VM, its cloud

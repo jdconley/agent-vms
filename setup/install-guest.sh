@@ -44,8 +44,12 @@ curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dea
 printf 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_%s.x nodistro main\n' "$NODE_MAJOR" > /etc/apt/sources.list.d/agent-vms-node.list
 curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor --yes -o /etc/apt/keyrings/google-chrome.gpg
 echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/agent-vms-chrome.list
+# GitHub publishes a binary keyring, so it is saved as-is rather than dearmored.
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+chmod 644 /etc/apt/keyrings/githubcli-archive-keyring.gpg
+echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main' > /etc/apt/sources.list.d/agent-vms-github-cli.list
 apt-get -o DPkg::Lock::Timeout=120 update -qq
-apt_install nodejs google-chrome-stable
+apt_install nodejs google-chrome-stable gh
 echo "Installing T3 $T3_VERSION and coding providers…"
 # NodeSource includes matching headers. Native addons can compile against them
 # instead of depending on another download from nodejs.org during installation.
@@ -103,10 +107,14 @@ for destination in .codex/AGENTS.md .claude/CLAUDE.md .config/opencode/AGENTS.md
 # Your remote development computer
 
 You are running as agent in your own Ubuntu VM. T3, Codex, Claude Code,
-OpenCode, Cursor CLI (cursor-agent), Grok Build (grok), Git, Node.js, Python,
-Chrome, Xfce, xdotool, scrot and ffmpeg are installed.
+OpenCode, Cursor CLI (cursor-agent), Grok Build (grok), Git, GitHub CLI (gh),
+Node.js, Python, Chrome, Xfce, xdotool, scrot and ffmpeg are installed.
 Use /home/agent/workspaces for repositories. Provider authentication belongs to
 this VM; no host credentials are mounted or synchronized.
+
+GitHub access uses gh with the user's own sign-in. Check gh auth status before
+cloning private repositories or opening pull requests. If it fails, ask the user
+to run gh auth login in this VM. Never ask for a token in chat or put one in a command.
 
 For GUI commands use DISPLAY=:1 and XAUTHORITY=/home/agent/.Xauthority.
 Launch Chrome with google-chrome-stable (keep its sandbox enabled).

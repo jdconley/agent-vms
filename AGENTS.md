@@ -32,7 +32,11 @@ stdout structured. Keep tokens out of command arguments and logs.
 - Open the returned pairing link in the user's browser when possible; verify
   the page renders. The localhost link belongs to the controller where the
   command ran, not a phone or an unrelated agent sandbox.
-- Provider accounts require the user's authorization in T3 or the guest CLI.
+- Verify `ssh avm-NAME true` (existing VM: `avm-HOSTNAME`) for Claude Code,
+  Codex and editor access. If `up` reports SSH was not configured, fix the cause
+  and run `ssh-config [NAME] --host USER@HOST`.
+- Provider and GitHub accounts require the user's authorization in T3 or the
+  guest CLI (`gh auth login`, then `gh auth setup-git`).
   Never copy their personal SSH private key, host login tokens, or browser profile.
 - For phone access, run `mobile [NAME] --host USER@HOST` and surface Tailscale's
   authorization link. Wait for actual user authorization; elapsed time is not

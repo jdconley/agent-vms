@@ -25,6 +25,8 @@ the commit, tool versions and results, excluding credentials and pairing tokens.
 2. Open the pairing link in a browser on the controller, complete pairing and
    check that T3 renders. Test provider sign-in only with an authorized account.
    Check `cursor-agent --version` and `grok --version` as the guest's `agent` user.
+   Confirm `ssh avm-smoke-test true` works from the controller, then connect from
+   the Claude Code desktop and Codex apps if you have them.
    When changing either native CLI pin, download the versioned artifact from its
    official installer source, update its SHA-256 in `versions.env`, and repeat
    the runtime check. Do not substitute third-party packages with similar names.

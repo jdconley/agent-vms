@@ -9,10 +9,12 @@ import platform
 import re
 import shlex
 import shutil
+import socket
 import time
 import urllib.request
 import urllib.parse
 import uuid
+import xml.etree.ElementTree as ET
 
 from lib.agent_vm import (ROOT, STATE, Error, cloud_config, free_port, log,
                           read_state, run, source_archive, start_tunnel, write_state)
@@ -21,6 +23,22 @@ INSTANCES = STATE / "instances"
 BASES = Path("/var/lib/libvirt/images/agent-vms")
 IMAGE_URL = "https://cloud-images.ubuntu.com/noble/current/"
 IMAGE_NAME = "noble-server-cloudimg-amd64.img"
+NETWORK = "agent-vms"
+SYSTEMD = Path("/etc/systemd/system")
+# Below Linux's ephemeral range, so outgoing connections never take these first.
+SSH_PORTS = range(22200, 23000)
+# Runs as the guest's agent user. Replaces only this controller's earlier key
+# (matched by comment), then prints the host key for the controller to pin.
+AUTHORIZE = r'''set -eu
+key="$1"; dir="${2:-/home/agent/.ssh}"; comment="${key##* }"
+install -d -m 700 "$dir"
+touch "$dir/authorized_keys"
+awk -v c="$comment" '$NF != c' "$dir/authorized_keys" > "$dir/authorized_keys.new"
+printf '%s\n' "$key" >> "$dir/authorized_keys.new"
+chmod 600 "$dir/authorized_keys.new"
+mv "$dir/authorized_keys.new" "$dir/authorized_keys"
+cat "${3:-/etc/ssh/ssh_host_ed25519_key.pub}"
+'''
 
 
 @contextlib.contextmanager
@@ -67,10 +85,10 @@ def verify_image(path, expected):
 def base_image():
     BASES.mkdir(parents=True, exist_ok=True)
     manifest = BASES / "ubuntu-24.04.json"
-    if manifest.exists():
-        data = json.loads(manifest.read_text())
-        digest = data["sha256"]
-    else:
+    digest = json.loads(manifest.read_text())["sha256"] if manifest.exists() else None
+    # "current" moves on; a manifest whose image was removed cannot be re-downloaded.
+    if not (digest and re.fullmatch(r"[a-f0-9]{64}", digest)
+            and (BASES / f"ubuntu-24.04-{digest}.qcow2").exists()):
         log("[2/5] Downloading and verifying the Ubuntu 24.04 base image…")
         with urllib.request.urlopen(IMAGE_URL + "SHA256SUMS", timeout=60) as response:
             lines = response.read().decode().splitlines()
@@ -78,8 +96,6 @@ def base_image():
         if len(matches) != 1 or not re.fullmatch(r"[a-f0-9]{64}", matches[0]):
             raise Error("Ubuntu checksum manifest did not identify exactly one supported image.")
         digest = matches[0]
-    if not re.fullmatch(r"[a-f0-9]{64}", digest):
-        raise Error("Invalid base-image manifest.")
     path = BASES / f"ubuntu-24.04-{digest}.qcow2"
     if not path.exists():
         temporary = BASES / "download.partial"
@@ -117,6 +133,130 @@ def address(name, timeout=120):
         if time.monotonic() >= deadline:
             raise Error(f"No unique DHCP address for {name}. Check virsh domifaddr {name} and libvirt network agent-vms.")
         time.sleep(2)
+
+
+def running_address(name):
+    power = virsh("domstate", name).strip()
+    if power != "running":
+        raise Error(f"{name} is {power}. Start it with: agent-vm up {name} (same --host and resources).")
+    return address(name, timeout=0)
+
+
+def domain_mac(name):
+    macs = [interface.find("mac").get("address")
+            for interface in ET.fromstring(virsh("dumpxml", name)).iterfind("./devices/interface")
+            if interface.find("source") is not None and interface.find("source").get("network") == NETWORK]
+    if len(macs) != 1:
+        raise Error(f"{name} must have exactly one interface on the {NETWORK} network.")
+    return macs[0]
+
+
+def update_reservation(action, entry):
+    virsh("net-update", NETWORK, action, "ip-dhcp-host", ET.tostring(entry, encoding="unicode"),
+          "--live", "--config")
+
+
+def reservations():
+    return ET.fromstring(virsh("net-dumpxml", NETWORK)).findall("./ip/dhcp/host")
+
+
+def reserve_address(name, ip):
+    """Pin the current lease so SSH entries and tunnels survive host reboots."""
+    mac = domain_mac(name)
+    for entry in reservations():
+        if entry.get("mac") == mac and entry.get("name") == name and entry.get("ip") == ip:
+            return
+        if entry.get("mac") == mac or entry.get("name") == name:
+            update_reservation("delete", entry)
+    update_reservation("add-last", ET.Element("host", mac=mac, name=name, ip=ip))
+
+
+def release_address(name):
+    try:
+        entries = reservations()
+    except Error:
+        return  # Without the managed network there is no reservation to release.
+    for entry in entries:
+        if entry.get("name") == name:
+            update_reservation("delete", entry)
+
+
+def ssh_port(directory, state):
+    """Choose, once, the host-loopback port that relays to this guest's SSH."""
+    if state.get("ssh_port"):
+        return state["ssh_port"]
+    taken = set()
+    for other in INSTANCES.glob("*"):
+        if other.is_dir() and other != directory:
+            try:
+                taken.add(read_state(other).get("ssh_port"))
+            except Error:
+                pass
+    for port in SSH_PORTS:
+        if port in taken:
+            continue
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+        state["ssh_port"] = port
+        write_state(directory, state)
+        return port
+    raise Error(f"No free SSH relay port in {SSH_PORTS.start}-{SSH_PORTS.stop - 1} on this host.")
+
+
+def publish_ssh(name, ip, port):
+    """Relay host loopback to guest SSH, since accounts are often limited to PermitOpen 127.0.0.1:*.
+
+    Anything on the host can already reach the guest directly; this adds no exposure.
+    """
+    unit = f"agent-vms-ssh-{name}"
+    files = {
+        SYSTEMD / f"{unit}.socket": (f"[Unit]\nDescription=SSH relay to agent VM {name} (host loopback only)\n"
+                                     f"[Socket]\nListenStream=127.0.0.1:{port}\n"
+                                     "[Install]\nWantedBy=sockets.target\n"),
+        SYSTEMD / f"{unit}.service": (f"[Unit]\nDescription=SSH relay to agent VM {name}\n"
+                                      f"[Service]\nDynamicUser=yes\n"
+                                      f"ExecStart=/usr/lib/systemd/systemd-socket-proxyd {ip}:22\n"),
+    }
+    changed = [path for path, text in files.items() if not path.exists() or path.read_text() != text]
+    for path in changed:
+        path.write_text(files[path])
+    if changed:
+        run(["systemctl", "daemon-reload"])
+        # A running relay keeps its old target and port until it is stopped.
+        run(["systemctl", "stop", f"{unit}.service", f"{unit}.socket"])
+    run(["systemctl", "enable", "--now", f"{unit}.socket"])
+
+
+def unpublish_ssh(name):
+    unit = f"agent-vms-ssh-{name}"
+    files = [SYSTEMD / f"{unit}.socket", SYSTEMD / f"{unit}.service"]
+    if not any(path.exists() for path in files):
+        return
+    run(["systemctl", "disable", "--now", f"{unit}.socket", f"{unit}.service"], check=False)
+    for path in files:
+        path.unlink(missing_ok=True)
+    run(["systemctl", "daemon-reload"])
+
+
+def authorize(name, public_key):
+    """Let the controller's key log in as agent and return how to reach and pin the guest."""
+    if name is None:
+        output = run(["runuser", "-u", "agent", "--", "bash", "-c", AUTHORIZE, "authorize", public_key],
+                     capture=True, timeout=30)
+        return {"hostname": "127.0.0.1", "port": 22, "host_key": output.strip()}
+    directory = INSTANCES / name
+    state = read_state(directory)
+    assert_domain(state)
+    ip = running_address(name)
+    reserve_address(name, ip)
+    port = ssh_port(directory, state)
+    publish_ssh(name, ip, port)
+    output = guest(directory, ip, shlex.join(["bash", "-c", AUTHORIZE, "authorize", public_key]),
+                   capture=True, timeout=30)
+    return {"hostname": "127.0.0.1", "port": port, "host_key": output.strip()}
 
 
 def health(directory, ip):
@@ -195,6 +335,7 @@ def up(args):
     write_state(directory, state)
     try:
         ip = address(args.name)
+        reserve_address(args.name, ip)
         install_guest(directory, ip)
     except Error:
         state["phase"] = "failed"
@@ -227,7 +368,7 @@ def access(name):
     directory = INSTANCES / name
     state = read_state(directory)
     assert_domain(state)
-    ip = address(name, timeout=0)
+    ip = running_address(name)
     health(directory, ip)
     port = host_tunnel(directory, ip)
     output = guest(directory, ip, "t3 pair", capture=True, timeout=30)
@@ -285,6 +426,8 @@ def remove(name):
         if virsh("domstate", name).strip() != "shut off":
             virsh("destroy", name)
         virsh("undefine", name)
+    release_address(name)
+    unpublish_ssh(name)
     control = control_path(directory)
     if control.exists():
         run(["ssh", "-S", control, "-O", "exit", "agent@localhost"], check=False)
@@ -313,12 +456,15 @@ def dispatch(args):
     if args.command == "access":
         with locked():
             return access(args.name)
+    if args.command == "authorize":
+        with locked():
+            return authorize(args.name, args.public_key)
     if args.command == "run":
         if args.name:
             directory = INSTANCES / args.name
             state = read_state(directory)
             assert_domain(state)
-            guest(directory, address(args.name, timeout=0), args.guest_command)
+            guest(directory, running_address(args.name), args.guest_command)
         else:
             run(["runuser", "-l", "agent", "-c", args.guest_command])
         return {"status": "command completed"}
@@ -327,9 +473,12 @@ def dispatch(args):
             directory = INSTANCES / args.name
             state = read_state(directory)
             assert_domain(state)
-            ip = address(args.name, timeout=0)
+            ip = running_address(args.name)
             health(directory, ip)
-            output = guest(directory, ip, "sudo -n bash -s", data=(ROOT / "setup/mobile.sh").read_bytes(), capture=True, timeout=180)
+            # Pass the script as an argument: with bash -s, any child reading
+            # stdin (an apt prompt, for example) would consume the rest of it.
+            script = (ROOT / "setup/mobile.sh").read_text()
+            output = guest(directory, ip, shlex.join(["sudo", "-n", "bash", "-c", script]), capture=True, timeout=180)
         else:
             output = run(["bash", ROOT / "setup/mobile.sh"], capture=True, timeout=180)
         return {"url": pairing_url(output), "access": "tailscale"}

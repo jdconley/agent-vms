@@ -19,6 +19,8 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 STATE = Path("/var/lib/agent-vms")
 NAME = re.compile(r"[a-z][a-z0-9-]{0,61}[a-z0-9]$|[a-z]$")
+# One key per line, no authorized_keys options such as command= or from=.
+PUBLIC_KEY = re.compile(r"(ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa) [A-Za-z0-9+/]+={0,3}( [A-Za-z0-9@._-]+)?")
 
 
 class Error(Exception):
@@ -102,9 +104,14 @@ def remote(host, arguments):
         "tar -xzf - -C \"$work\"; cd \"$work\"; "
         f"if [ \"$(id -u)\" = 0 ]; then {command}; else sudo -n {command}; fi"
     )
-    output = run([*ssh_base(host), script], capture=True, data=source_archive())
+    result = run([*ssh_base(host), script], capture=True, data=source_archive(), check=False)
+    # The remote CLI and ssh already explained the failure on stderr.
+    if result.returncode == 255:
+        raise Error(f"Could not connect to {host} over SSH (exit 255); see the SSH message above.")
+    if result.returncode:
+        raise Error(f"{host} reported an error (exit {result.returncode}); see the message above.")
     try:
-        return json.loads(output)
+        return json.loads(result.stdout.decode())
     except ValueError as exc:
         raise Error("Remote host did not return valid JSON. Check its shell startup output.") from exc
 
@@ -164,6 +171,28 @@ def local_tunnel(host, port, name):
     return local_port, f"ssh -S {shlex.quote(str(control))} -O exit {shlex.quote(host)}"
 
 
+def ssh_access(args):
+    """Authorize this computer for SSH as agent, for Claude Code, Codex and editors."""
+    from lib import sshconfig
+    if not args.host:
+        raise Error("ssh-config sets up SSH on your laptop. Run it there with --host.")
+    home = Path.home()
+    public_key = sshconfig.ensure_key(home)
+    info = remote(args.host, ["authorize", *([args.name] if args.name else []), "--public-key", public_key])
+    alias = sshconfig.alias(args.name, args.host)
+    sshconfig.write_entry(home, alias, info["hostname"], info["port"], args.host, info["host_key"])
+    result = {"ssh": alias}
+    if not sshconfig.ensure_include(home):
+        result["ssh_include"] = sshconfig.include_line(home)
+        return result
+    try:
+        run([*ssh_base(alias), "true"], timeout=60)
+    except Error as exc:
+        raise Error(f"Wrote SSH entry {alias}, but could not connect through it. Check that {args.host} "
+                    "allows forwarding to its loopback (AllowTcpForwarding local, PermitOpen 127.0.0.1:*).") from exc
+    return result
+
+
 def connect(args):
     if args.host:
         info = remote(args.host, ["access", *([args.name] if args.name else [])])
@@ -195,14 +224,16 @@ def parser():
         ("mobile", "Enable Tailscale HTTPS for phone access (requires tailnet sign-in)"),
         ("run", "Run a shell command as the guest's agent user"),
         ("access", "Inspect the host-local pairing endpoint"),
+        ("ssh-config", "Set up SSH as agent for Claude Code, Codex and editors"),
+        ("authorize", "Authorize a controller SSH key (used by ssh-config)"),
     ):
         sub = commands.add_parser(name, help=help_text)
         if name in ("up", "stop", "delete"):
             sub.add_argument("name")
-        elif name in ("status", "connect", "access", "mobile", "run"):
+        elif name in ("status", "connect", "access", "mobile", "run", "ssh-config", "authorize"):
             sub.add_argument("name", nargs="?")
         sub.add_argument("--host", help="SSH alias or user@host; omit to run on this Linux machine")
-        sub.add_argument("--json", action="store_true", help="Machine-readable result; up/install skip the local tunnel")
+        sub.add_argument("--json", action="store_true", help="Machine-readable result; up/install skip the local tunnel and SSH entry")
         if name in ("up", "install"):
             sub.add_argument("--no-connect", action="store_true", help="Install and verify without opening a tunnel")
         if name == "up":
@@ -213,6 +244,8 @@ def parser():
             sub.add_argument("--yes", action="store_true")
         if name == "run":
             sub.add_argument("--command", dest="guest_command", required=True, help="Shell command to execute inside the guest")
+        if name == "authorize":
+            sub.add_argument("--public-key", required=True)
     return result
 
 
@@ -224,8 +257,46 @@ def validate(args):
         raise Error("Invalid SSH host. Use an SSH config alias or user@hostname (put ports and identity files in ~/.ssh/config).")
     if args.command == "delete" and not args.yes:
         raise Error("Deleting a VM permanently erases its disk. Repeat with --yes.")
+    if args.command == "authorize" and not PUBLIC_KEY.fullmatch(args.public_key):
+        raise Error("Expected one OpenSSH public key without options.")
     if args.command == "up" and not (1 <= args.cpus <= 256 and 2048 <= args.memory <= 1048576 and 15 <= args.disk <= 16384):
         raise Error("Use 1–256 CPUs, 2048–1048576 MiB RAM and 15–16384 GiB disk.")
+
+
+def forwarded(args):
+    """Arguments for the same command on the remote host."""
+    result = [args.command]
+    if getattr(args, "name", None):
+        result.append(args.name)
+    if args.command == "up":
+        result += ["--cpus", str(args.cpus), "--memory", str(args.memory), "--disk", str(args.disk)]
+    if args.command == "delete":
+        result += ["--yes"]
+    if args.command == "run":
+        # The = form keeps a value such as --version from parsing as an option.
+        result += [f"--command={args.guest_command}"]
+    if args.command == "authorize":
+        result += ["--public-key", args.public_key]
+    return result
+
+
+def report(result, args):
+    if "url" in result:
+        destination = "a device on your tailnet" if result.get("access") == "tailscale" else "this computer"
+        print(f"\nT3 Code is ready. Open this one-time pairing link on {destination}:\n\n  {result['url']}\n")
+        if result.get("access") != "tailscale":
+            print("The SSH tunnel stays open in the background.")
+        print("Pairing links are secrets; don't paste them into issues.")
+        print("Sign in to your coding provider in T3 to start working.")
+        if result.get("disconnect"):
+            print(f"Close tunnel: {result['disconnect']}")
+    if "ssh" in result:
+        print(f"\nSSH as agent (Claude Code, Codex, editors): ssh {result['ssh']}")
+        if result.get("ssh_include"):
+            print(f"~/.ssh/config is a symlink, so it was not changed. Add this as its first line:\n  {result['ssh_include']}")
+    if "ssh_error" in result:
+        rerun = shlex.join(["./agent-vm", "ssh-config", *([args.name] if args.name else []), "--host", args.host])
+        print(f"\nSSH access was not configured: {result['ssh_error']}\nAfter fixing that, run: {rerun}")
 
 
 def main():
@@ -234,36 +305,34 @@ def main():
         validate(args)
         if args.command == "connect":
             result = connect(args)
+        elif args.command == "ssh-config":
+            result = ssh_access(args)
         elif args.host:
-            forwarded = [args.command]
-            if getattr(args, "name", None):
-                forwarded.append(args.name)
-            if args.command == "up":
-                forwarded += ["--cpus", str(args.cpus), "--memory", str(args.memory), "--disk", str(args.disk)]
-            if args.command == "delete":
-                forwarded += ["--yes"]
-            if args.command == "run":
-                forwarded += ["--command", args.guest_command]
-            result = remote(args.host, forwarded)
+            result = remote(args.host, forwarded(args))
         else:
             from lib.host import dispatch
             result = dispatch(args)
+        if args.command == "delete" and args.host:
+            from lib import sshconfig
+            sshconfig.remove_entry(Path.home(), sshconfig.alias(args.name, args.host))
         if args.command in ("up", "install") and not args.json and not args.no_connect:
             args.name = getattr(args, "name", None)
             result.update(connect(args))
+            if args.host:
+                # The VM and T3 already work; keep the pairing link if only SSH setup fails.
+                try:
+                    result.update(ssh_access(args))
+                except Error as exc:
+                    result["ssh_error"] = str(exc)
         if args.json:
             print(json.dumps(result))
-        elif "url" in result:
-            destination = "a device on your tailnet" if result.get("access") == "tailscale" else "this computer"
-            print(f"\nT3 Code is ready. Open this one-time pairing link on {destination}:\n\n  {result['url']}\n")
-            if result.get("access") != "tailscale":
-                print("The SSH tunnel stays open in the background.")
-            print("Pairing links are secrets; don't paste them into issues.")
-            print("Sign in to your coding provider in T3 to start working.")
-            if result.get("disconnect"):
-                print(f"Close tunnel: {result['disconnect']}")
+        elif {"url", "ssh", "ssh_error"} & set(result if isinstance(result, dict) else ()):
+            report(result, args)
         else:
             print(json.dumps(result, indent=2))
-    except (Error, OSError, KeyboardInterrupt) as exc:
-        log(f"\nagent-vm: {exc or 'Interrupted. Rerun the same command to resume.'}")
+    except KeyboardInterrupt:
+        log("\nagent-vm: Interrupted. Rerun the same command to resume.")
+        sys.exit(1)
+    except (Error, OSError) as exc:
+        log(f"\nagent-vm: {exc}")
         sys.exit(1)
