@@ -8,7 +8,11 @@ runuser -u agent -- test -w /home/agent/.config || {
   echo 'Agent settings directory is not writable. Repair with: sudo install -d -m 0755 -o agent -g agent /home/agent/.config' >&2
   exit 1
 }
-for tool in cursor-agent grok; do
+for tool in t3 codex claude opencode cursor-agent grok; do
+  # A leftover root copy would shadow the agent's self-updating one.
+  case "$(readlink -f "/usr/local/bin/$tool")" in /home/agent/*) ;;
+    *) echo "$tool is not the agent-owned, self-updating copy. Rerun the installer." >&2; exit 1 ;;
+  esac
   runuser -u agent -- env HOME=/home/agent timeout 30 "$tool" --version >/dev/null || {
     echo "Cannot run $tool as agent. Rerun the installer and inspect its log." >&2
     exit 1
