@@ -24,6 +24,8 @@ BASES = Path("/var/lib/libvirt/images/agent-vms")
 IMAGE_URL = "https://cloud-images.ubuntu.com/noble/current/"
 IMAGE_NAME = "noble-server-cloudimg-amd64.img"
 NETWORK = "agent-vms"
+# Installed by setup/install-guest.sh; see setup/update-tools.sh.
+UPDATER = "/usr/local/lib/agent-vms/update-tools.sh"
 SYSTEMD = Path("/etc/systemd/system")
 # Below Linux's ephemeral range, so outgoing connections never take these first.
 SSH_PORTS = range(22200, 23000)
@@ -263,6 +265,12 @@ def health(directory, ip):
     return guest(directory, ip, "sudo -n /usr/local/lib/agent-vms/health.sh", capture=True, timeout=100)
 
 
+def tool_versions(output):
+    """Read the updater's "version NAME TEXT" lines."""
+    return {parts[1]: parts[2] for parts in (line.split(" ", 2) for line in output.splitlines())
+            if len(parts) == 3 and parts[0] == "version"}
+
+
 def install_guest(directory, ip):
     log("[4/5] Waiting for guest SSH and cloud-init…")
     deadline = time.monotonic() + 180
@@ -459,6 +467,15 @@ def dispatch(args):
     if args.command == "authorize":
         with locked():
             return authorize(args.name, args.public_key)
+    if args.command == "update":
+        if args.name:
+            directory = INSTANCES / args.name
+            assert_domain(read_state(directory))
+            output = guest(directory, running_address(args.name), f"sudo -n {UPDATER} now",
+                           capture=True, timeout=3900)
+        else:
+            output = run([UPDATER, "now"], capture=True, timeout=3900)
+        return {"status": "updated", "versions": tool_versions(output)}
     if args.command == "run":
         if args.name:
             directory = INSTANCES / args.name

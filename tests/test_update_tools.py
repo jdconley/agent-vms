@@ -5,6 +5,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+
+from lib import agent_vm, host
 
 ROOT = Path(__file__).resolve().parents[1]
 CLIS = ("claude", "codex", "opencode", "cursor-agent", "grok")
@@ -141,6 +144,43 @@ class UpdateToolsTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("journalctl -u agent-vms-update", result.stderr)
         self.assertEqual(sum(line.startswith("version ") for line in result.stdout.splitlines()), 6)
+
+
+class UpdateCommandTests(unittest.TestCase):
+    OUTPUT = "health ok\nversion codex codex-cli 0.157.0\nversion t3 t3 v0.0.42\nversionless line\n"
+
+    def dispatch(self, *argv, power="running"):
+        args = agent_vm.parser().parse_args(["update", *argv])
+        libvirt = lambda *a, check=True: power + "\n" if a[0] == "domstate" else ""
+        with patch.object(host, "require_root"), patch.object(host, "read_state", return_value={}), \
+                patch.object(host, "assert_domain"), patch.object(host, "virsh", side_effect=libvirt), \
+                patch.object(host, "address", return_value="192.168.197.23"), \
+                patch.object(host, "guest", return_value=self.OUTPUT) as guest, \
+                patch.object(host, "run", return_value=self.OUTPUT) as run:
+            return host.dispatch(args), guest, run
+
+    def test_update_forwards_its_optional_name(self):
+        for argv, expected in ((["demo", "--host", "kvm-host"], ["update", "demo"]), (["--host", "kvm-host"], ["update"])):
+            self.assertEqual(agent_vm.forwarded(agent_vm.parser().parse_args(["update", *argv])), expected)
+
+    def test_versions_are_read_from_updater_output(self):
+        self.assertEqual(host.tool_versions(self.OUTPUT), {"codex": "codex-cli 0.157.0", "t3": "t3 v0.0.42"})
+
+    def test_managed_vm_updates_through_the_management_channel(self):
+        result, guest, _ = self.dispatch("demo")
+        self.assertEqual(guest.call_args.args[2], "sudo -n /usr/local/lib/agent-vms/update-tools.sh now")
+        self.assertGreaterEqual(guest.call_args.kwargs["timeout"], 3600, "Updating every tool can take a while")
+        self.assertEqual(result, {"status": "updated", "versions": {"codex": "codex-cli 0.157.0", "t3": "t3 v0.0.42"}})
+
+    def test_existing_vm_updates_locally(self):
+        result, guest, run = self.dispatch()
+        guest.assert_not_called()
+        self.assertEqual([str(x) for x in run.call_args.args[0]], ["/usr/local/lib/agent-vms/update-tools.sh", "now"])
+        self.assertEqual(result["status"], "updated")
+
+    def test_stopped_vm_is_reported_before_updating(self):
+        with self.assertRaisesRegex(host.Error, "shut off"):
+            self.dispatch("demo", power="shut off")
 
 
 if __name__ == "__main__":

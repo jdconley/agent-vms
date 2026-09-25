@@ -226,11 +226,12 @@ def parser():
         ("access", "Inspect the host-local pairing endpoint"),
         ("ssh-config", "Set up SSH as agent for Claude Code, Codex and editors"),
         ("authorize", "Authorize a controller SSH key (used by ssh-config)"),
+        ("update", "Update coding tools now; restarts T3 only for a newer version"),
     ):
         sub = commands.add_parser(name, help=help_text)
         if name in ("up", "stop", "delete"):
             sub.add_argument("name")
-        elif name in ("status", "connect", "access", "mobile", "run", "ssh-config", "authorize"):
+        elif name in ("status", "connect", "access", "mobile", "run", "ssh-config", "authorize", "update"):
             sub.add_argument("name", nargs="?")
         sub.add_argument("--host", help="SSH alias or user@host; omit to run on this Linux machine")
         sub.add_argument("--json", action="store_true", help="Machine-readable result; up/install skip the local tunnel and SSH entry")
